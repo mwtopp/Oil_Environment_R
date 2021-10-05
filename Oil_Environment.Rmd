@@ -1,0 +1,892 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Introduction
+The purpose of this project is to investigate the values of oil / gas companies and how they are affected by public environmental concerns. The share price on the London Stock Exchange will be used as a measure of the company values. Google search data will be used as a measure of public concern regarding environmental issues.
+
+To provide context I will also compare the company share prices with general stock market values and fuel prices.
+
+The three oil / gas companies I will investigate are:
+- Royal Dutch Shell (RDSA LN)
+- BP (BP LN)
+- Tullow Oil (TLW LN)
+
+Royal Dutch Shell and BP are two of the major global energy companies with market valuations in excess of £10 trillion and £5 trillion respectively. Whereas Tullow Oil is a smaller company with a market valuation of approximately £65 billion.
+
+```{r}
+# load the required libraries
+library(quantmod)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(readr)
+```
+
+Load price data for the three companies from yahoo finance. 
+
+
+```{r}
+# load the stocks data
+getSymbols("BP.L")
+getSymbols("RDSA.L")
+getSymbols("TLW.L")
+```
+
+
+
+```{r}
+# save the closing price data to a dataframe
+stocks <- data.frame(
+  "BP.L" = BP.L$BP.L.Close,
+  "RDSA.L" = RDSA.L$RDSA.L.Close,
+  "TLW.L" = TLW.L$TLW.L.Close,
+  "Date" = as.Date(row.names(as.data.frame(BP.L)))
+)
+```
+
+Investigate the data, check for missing values etc.
+
+```{r}
+# check number of rows with missing values 
+stocks %>% filter(is.na(BP.L)) %>% nrow()
+```
+
+```{r}
+# print out rows with missing values
+missing_rows <- stocks %>% filter(is.na(BP.L))
+
+missing_rows
+```
+
+Closing prices are missing for all the stocks on Christmas Eve and New Years' Eve from the years 2007 - 2008 and 2013 - 2015. We can omit these rows without losing any useful data.
+
+```{r}
+# omit rows with missing values
+stocks <- stocks %>% na.omit()
+```
+
+```{r}
+# check that there are now no missing values
+stocks %>% filter(is.na(BP.L.Close)) %>% nrow()
+```
+
+```{r}
+# check that there are now no missing values in the other stocks
+stocks %>% filter(is.na(RDSA.L.Close)) %>% nrow()
+
+stocks %>% filter(is.na(TLW.L.Close)) %>% nrow()
+```
+
+
+Lets plot the closing prices.
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+close_plot <- stocks %>% gather(key="stock", value="value", -Date) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=stock)) +
+  labs(y="Closing Price", title="BP, RDSA and TWL Closing Prices") +
+  scale_color_discrete(name="Company", labels=c("BP", "RDSA", "TWL"))
+
+close_plot
+```
+
+# Company Values and FTSE Index
+To provide a baseline comparison we can compare the performance of the separate companies to the overall performance of the FTSE 100 market.
+
+```{r}
+# load the FTSE data
+getSymbols("^FTSE")
+```
+
+```{r}
+# save the closing value to a dataframe 
+ftse <- data.frame("FTSE" = FTSE$FTSE.Close,
+                   "Date" = as.Date(row.names(as.data.frame(FTSE))))
+# check for missing values
+missing_ftse <- ftse %>% filter(is.na(FTSE.Close))
+
+missing_ftse
+```
+
+There are 14 rows of missing data in the FTSE data set, the same 12 as the share prices plus another 2. We can remove these without losing any useful data.
+
+```{r}
+# remove the rows with missing values
+ftse <- ftse %>% na.omit()
+```
+
+To compare the company stock prices to the market valuation graphically we will need to transform the data so the scale is comparable. First we will combine the data into a single dataframe.
+
+
+```{r}
+# join the ftse data to the stock data
+stocks_ftse <- stocks %>% 
+  inner_join(ftse,
+             by = c("Date" = "Date"))
+```
+
+Before scaling the data we can review summary statistics and correlations.
+
+```{r}
+# print the summary statistics
+summary.data.frame(stocks_ftse)
+```
+
+```{r}
+# print the standard deviation of the three stock closing prices
+sd(stocks_ftse$BP.L.Close)
+sd(stocks_ftse$RDSA.L.Close)
+sd(stocks_ftse$TLW.L.Close)
+```
+
+We can see there is most variation within the TLW closing prices. The variation in the BP and RDSA prices is similar relative to their mean values. 
+
+```{r}
+# print the correlation matrix for the stocks and ftse
+cor(stocks_ftse %>% select(- Date))
+```
+
+We see there are no strong correlations between the shares and FTSE values. The strongest correlation is between BP and RDSA which is perhaps to be expected as they are both large global oil / gas producers.
+There seems to be virtually no correlation between the closing price of BP and the FTSE. 
+TLW is negatively correlated with the FTSE.
+
+To scale the data I will use the scale() function to Standardize the variables.
+
+```{r}
+# transform columns to normalized data
+stocks_ftse_std <- stocks_ftse %>%
+  mutate(BP.L.Close = scale(stocks_ftse$BP.L.Close),
+         RDSA.L.Close = scale(stocks_ftse$RDSA.L.Close),
+         TLW.L.Close = scale(stocks_ftse$TLW.L.Close),
+         FTSE.Close = scale(stocks_ftse$FTSE.Close))
+```
+
+Plotting the normalized data.
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+std_plot <- stocks_ftse_std %>%
+  gather(key="stock", value="value", -Date) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=stock)) +
+  labs(y="Standardized Value", title="FTSE 100, BP, RDSA and TWL Standardized Values") +
+  scale_color_discrete(name="Company / Index", labels=c("BP", "FTSE 100", "RDSA", "TWL"))
+
+std_plot
+```
+
+There is a lot of variation day to day, will the trends be clearer if we take a weekly mean?
+
+```{r}
+# group by week and calculate the mean
+stocks_ftse_week <- stocks_ftse_std %>%
+  group_by(yw = paste(year(Date), week(Date))) %>% 
+  mutate(BP.L.week = mean(BP.L.Close),
+         RDSA.L.week = mean(RDSA.L.Close),
+         TLW.L.week = mean(TLW.L.Close),
+         FTSE.week = mean(FTSE.Close))
+```
+
+Try plotting the weekly normalized data
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+weekly_plot <- stocks_ftse_week %>%
+  gather(key="stock", value="value", -Date, -BP.L.Close, -RDSA.L.Close, -TLW.L.Close, -FTSE.Close, -yw) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=stock)) +
+  labs(y="Standardized Value", title="Weekly FTSE 100, BP, RDSA and TWL Standardized Values") +
+  scale_color_discrete(name="Company / Index", labels=c("BP", "FTSE 100", "RDSA", "TWL"))
+
+weekly_plot
+```
+
+The plot has been smoothed, lets try monthly mean values.
+
+```{r}
+# group by month and calculate the mean
+stocks_ftse_month <- stocks_ftse_std %>%
+  group_by(ym = paste(year(Date), month(Date))) %>% 
+  mutate(BP.L.month = mean(BP.L.Close),
+         RDSA.L.month = mean(RDSA.L.Close),
+         TLW.L.month = mean(TLW.L.Close),
+         FTSE.month = mean(FTSE.Close))
+```
+
+Try plotting the monthly normalized data.
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+monthly_plot <- stocks_ftse_month %>%
+  gather(key="stock", value="value", -Date, -BP.L.Close, -RDSA.L.Close, -TLW.L.Close, -FTSE.Close, -ym) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=stock)) +
+  labs(y="Standardized Value", title="Monthly FTSE 100, BP, RDSA and TWL Standardized Values") +
+  scale_color_discrete(name="Company / Index", labels=c("BP", "FTSE 100", "RDSA", "TWL"))
+
+monthly_plot
+```
+
+The monthly plot is clearer while retaining the general trends.
+
+The plot shows that the FTSE and stocks move in the same direction at times (the fall in early 2020 is a clear example) but there is also a lot of variation for each stock or the FTSE which appears to be specific to the stock or more general economic issues in the case of the FTSE.
+
+# Company Values and Fuel Prices
+Intuitively, it seems likely that there will be a relationship between fuel prices and oil company values.  We can obtain weekly fuel price data from the UK government website.
+
+```{r}
+# Read the csv file
+fuel_weekly <- read_csv("210809_weekly_fuel_prices.csv")
+```
+
+The data needs to be cleaned before it can be used. The columns currently have default names, there are 7 unused columns and the first two rows contain descriptive information rather than variable values.
+
+```{r}
+# remove the unused columns
+fuel_weekly <- fuel_weekly %>% 
+  select(-X8, -X9, -X10, -X11, -X12, -X13, -X14)
+```
+
+```{r}
+# rename the columns
+fuel_weekly <- fuel_weekly %>% 
+  rename(c("Date" = "Weekly Prices time series",
+           "petrol_pump" = X2,
+           "diesel_pump" = X3,
+           "petrol_duty" = X4,
+           "diesel_duty" = X5,
+           "petrol_vat" = X6,
+           "diesel_vat" = X7))
+```
+
+```{r}
+# omit the first two rows
+fuel_weekly <- fuel_weekly[-c(1, 2),]
+```
+
+We also want to convert the Date column into date format to match the stocks dataframe.
+
+```{r}
+# convert date values to date format
+fuel_weekly$Date <- as.Date(fuel_weekly$Date, "%d/%m/%Y")
+```
+
+Check the dataframe structure.
+
+```{r}
+# print fuel_weekly structure
+str(fuel_weekly)
+```
+
+The pump price, duty and vat column values are characters, we will need to convert them to numerical values.
+
+```{r}
+# identify columns with character data type
+char_columns <- sapply(fuel_weekly, is.character)
+# convert columns to numeric
+fuel_weekly[ , char_columns] <- as.data.frame(
+  apply(fuel_weekly[ , char_columns], 2, as.numeric)
+)
+```
+
+To allow comparison of the stocks data and the fuel prices I will normalize the fuel price data. The duty and vat values are not considered relevant to this investigation so we can omit those columns from the normalized data.
+
+```{r}
+# omit the duty and vat columns
+# normalize the fuel price data
+fuel_weekly_std <- fuel_weekly %>% 
+  select(Date, petrol_pump, diesel_pump) %>% 
+  mutate(petrol_pump = scale(fuel_weekly$petrol_pump),
+         diesel_pump = scale(fuel_weekly$diesel_pump))
+```
+
+To analyse the stock prices and fuel prices we will join the stock weekly mean dataframe and the fuel weekly dataframe.
+
+```{r}
+# inner join stocks_ftse_week and fuel_weekly
+stocks_fuel_weekly <- stocks_ftse_week %>% 
+  inner_join(fuel_weekly_std,
+             by = c("Date" = "Date"))
+```
+
+We can remove the columns of daily closing prices to simplify the dataframe.
+
+```{r}
+# remove the daily closing price columns
+stocks_fuel_weekly <- stocks_fuel_weekly %>% 
+  select(-BP.L.Close, -RDSA.L.Close, -TLW.L.Close, -FTSE.Close)
+```
+
+Now we are ready to plot the stock prices and fuel prices.
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+stock_fuel_plot <- stocks_fuel_weekly %>%
+  gather(key="variable", value="value", -c(Date, yw)) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=variable)) +
+  labs(y="Standardized Value", title="FTSE 100, Stocks and Fuel Standardized Values") +
+  scale_color_discrete(name="Variable", labels=c("BP", "Diesel", "FTSE 100", "Petrol", "RDSA", "TLW"))
+
+stock_fuel_plot
+```
+
+The plot is not very easy to read with so many lines. We are primarily interested in the relationship between the stock prices and fuel prices so we can omit the FTSE values, also the petrol and diesel prices are very similar so we can omit one of them without losing too much useful information.
+
+```{r}
+# omit the FTSE and diesel values
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+stock_fuel_alt_plot <- stocks_fuel_weekly %>% 
+  select(-FTSE.week, -diesel_pump) %>% 
+  gather(key="variable", value="value", -c(Date, yw)) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=variable)) +
+  labs(y="Standardized Value", title="Stocks and Fuel Standardized Values") +
+  scale_color_discrete(name="Variable", labels=c("BP", "Petrol", "RDSA", "TLW"))
+
+stock_fuel_alt_plot
+```
+
+It is now easier to see a relationship between the stock prices and fuel prices. Generally the stocks and fuel prices move together although there are some marked divergences, for example, around mid 2010 BP drops significantly whereas much smaller drops are seen for the other variables. Also Tullow seems to diverge from the other stocks around 2016.
+
+Is a relationship indicated by the correlation coefficient? 
+
+```{r}
+# join stocks_ftse with fuel_weekly
+stocks_fuel_join <- stocks_ftse %>% 
+  inner_join(fuel_weekly,
+             by = c("Date" = "Date"))
+```
+
+```{r}
+# calculate the correlation matrix
+cor(stocks_fuel_join %>% select(-petrol_duty, -petrol_vat,
+         -diesel_duty, -diesel_vat, -Date))
+```
+
+The correlation matrix shows a moderate positive correlation between fuel prices and the RDSA price but virtually no correlation between fuel prices and BP. As expected petrol and diesel prices have a very strong positive correlation.
+
+# Company Values and Environmental Concern
+Now we will explore google trends data. We want to investigate public concern about environmental issues that could be connected to oil company activity. So the search terms we'll use are 'climate change', 'global warming' and 'oil spill'. We want to compare the trends data to the stocks data so the period of interest is 02-01-2007 to 20-08-2021. We will use UK results as a proxy for the global public concern.
+
+```{r}
+# load the gtrends library and other required library
+library(gtrendsR)
+library(Rcpp)
+```
+
+```{r}
+# save the google trends data
+trends <- gtrends(
+  keyword = c("climate change", "global warming", "oil spill"),
+  geo = "GB",
+  time = "all",
+  onlyInterest = TRUE)
+```
+
+```{r}
+# save the interest over time data
+trends_over_time <- trends$interest_over_time
+```
+
+Let's investigate the google trends data.
+
+```{r}
+# check the dataframe structure
+str(trends_over_time)
+```
+
+We need to change the hits variable to numeric values. Also, the trends data is monthly so we will create a year-month variable to allow us to join the data to the stocks monthly data.
+
+```{r}
+# convert hits variable
+trends_over_time$hits <- as.numeric(trends_over_time$hits)
+```
+
+```{r}
+# check for NA values
+missing_trends <- trends_over_time %>% filter(is.na(hits))
+
+missing_trends
+```
+
+Now we are ready to plot the trends data.
+
+```{r}
+# plot the trend data to a line graph
+trend_plot <- ggplot(data=trends_over_time) +
+  geom_line(aes(x=date, y=hits, color=keyword)) +
+  labs(y="Hits", title="Google Search Trends Data") +
+  scale_color_discrete(name="Keyword", labels=c("Climate Change", "Global Warming", "Oil Spill"))
+
+trend_plot
+```
+
+From the plot it appears "climate change" and "global warming" are correlated, hits tend to be lower in the middle of each year. Also initially "climate change" is searched more often whereas after 2013 "global warming" becomes the more common search term perhaps reflecting the growing understanding that the effect of human activity on the climate was more complex than just global warming. There is a large spike in searches for "global warming" around early 2007.
+
+Generally the number of searches for "oil spill" is much lower than the other two terms. However there is a very large spike around mid-2010.
+
+```{r}
+# create a month-year variable
+trends_over_time <- trends_over_time %>% 
+  mutate(ym = paste(year(date), month(date)))
+```
+
+Before joining the dataframes we will widen the trends data.
+
+```{r}
+# widen trends dataframe
+trends_wide <- trends_over_time %>% 
+  pivot_wider(names_from = keyword, values_from = hits)
+```
+
+The geo, time, gprop and category columns are redundant as every row has the same value for each, so we will remove them to simplify the dataframe.
+
+```{r}
+# omit redundant columns
+trends_wide <- trends_wide %>% 
+  select(-geo, -time, -gprop, -category)
+```
+
+Before joining the dataframes lets check if the appearance of a correlation between "climate change" and "global warming" is backed up by the numbers.
+
+```{r}
+# calculate the correlation matrix
+cor(trends_wide %>% select(-date, -ym))
+```
+
+There is a moderate positive correlation, possibly the fact that the trend for "global warming" is down whereas the trend for "climate change" is upwards has reduced the correlation we can see year by year.
+
+```{r}
+# normalize the trends data
+trends_wide <- trends_wide %>% 
+  mutate(climate_change_std = scale(trends_wide$`climate change`),
+         global_warming_std = scale(trends_wide$`global warming`),
+         oil_spill_std = scale(trends_wide$`oil spill`))
+```
+
+
+Now we can join the stocks and trends data.
+
+```{r}
+# join the trends data and the stocks_ftse_month data
+stocks_trends <- stocks_ftse_month %>% 
+  inner_join(trends_wide,
+             by = c("ym" = "ym"))
+```
+
+We don't need all the daily stock values so we will keep only the distinct monthly values.
+
+```{r}
+# remove duplicate ym values
+# omit the daily values and duplicate date
+stocks_trends_distinct <- stocks_trends %>% 
+  distinct(ym, .keep_all = TRUE) %>% 
+  select(-BP.L.Close, -RDSA.L.Close, -TLW.L.Close, -FTSE.Close, -date)
+```
+
+Lets plot each search term against the stock values in turn to see if there are any noticeable relationships.
+
+```{r}
+# omit the other values
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+stock_climate_plot <- stocks_trends_distinct %>% 
+  select(-`climate change`, -`global warming`, -`oil spill`, -FTSE.month,
+         -global_warming_std, -oil_spill_std) %>% 
+  gather(key="variable", value="value", -c(Date, ym)) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=variable)) +
+  labs(y="Standardized Value / Hits", title="Stocks and Climate Change Searches") +
+  scale_color_discrete(name="Variable", labels=c("BP",  "Climate Change", "RDSA", "TLW"))
+
+stock_climate_plot
+```
+
+
+```{r}
+# omit the other values
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+stock_global_plot <- stocks_trends_distinct %>% 
+  select(-`climate change`, -`global warming`, -`oil spill`, -FTSE.month,
+         -climate_change_std, -oil_spill_std) %>% 
+  gather(key="variable", value="value", -c(Date, ym)) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=variable)) +
+  labs(y="Standardized Value / Hits", title="Stocks and Global Warming Searches") +
+  scale_color_discrete(name="Variable", labels=c("BP",  "Global Warming", "RDSA", "TLW"))
+
+stock_global_plot
+```
+
+```{r}
+# omit the other values
+# reshape the data to make plotting simpler
+# plot the data to a line graph
+stock_oil_plot <- stocks_trends_distinct %>% 
+  select(-`climate change`, -`global warming`, -`oil spill`, -FTSE.month,
+         -climate_change_std, -global_warming_std) %>% 
+  gather(key="variable", value="value", -c(Date, ym)) %>% 
+  ggplot() +
+  geom_line(aes(x=Date, y=value, color=variable)) +
+  labs(y="Standardized Value / Hits", title="Stocks and Oil Spill Searches") +
+  scale_color_discrete(name="Variable", labels=c("BP",  "Oil Spill", "RDSA", "TLW"))
+
+stock_oil_plot
+```
+
+In the oil spill plot there is a one very noticeable feature, the large spike in searches for "oil spill" around early 2010 coincides with a large fall in the value of BP. This is undoubtably due to the Deepwater Horizon disaster that occurred in April 2010.
+
+Otherwise there are no clear relationships on the plots.
+
+# Investigating a Linear Relationship 
+Is there any indication of a linear relationship between any of the variables? Lets first look at BP and the search terms.
+
+```{r}
+# create scatter plot of BP and climate change
+BP_climate_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(BP.L.month, `climate change`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="Climate Change Hits", title="Standardized BP Price vs Climate Change Searches")
+
+BP_climate_plot
+```
+
+The distribution of points on BP vs "climate change" doesn't suggest a linear relationship. It appears to be curved with low values of "climate change" hits associated with approximately mean values of BP.L. 
+
+```{r}
+# create scatter plot of BP and global warming
+BP_global_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(BP.L.month, `global warming`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="Global Warming Hits", title="Standardized BP Price vs Global Warming Searches")
+
+BP_global_plot
+```
+
+Here there appears to be a slight positive linear relationship with higher numbers of "global warming" searches associated with higher values of BP.L.
+
+```{r}
+# create scatter plot of BP and oil spill
+BP_oil_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(BP.L.month, `oil spill`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="Oil Spill Hits", title="Standardized BP Price vs Oil Spill Searches")
+
+BP_oil_plot
+```
+
+There doesn't appear to be a linear relationship between BP stock value and "oil spill" searches. The linear model line is virtually flat. However, the three very high "oil spill" values have squashed all the other values in the bottom of the plot. If we omit the high values from the plot will the plot be clearer?
+
+```{r}
+# create scatter plot of BP and oil spill (omitting high oil spill values)
+BP_oil2_plot <- stocks_trends_distinct %>% 
+  filter(`oil spill` < 10) %>% 
+  ggplot(aes(BP.L.month, `oil spill`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="Oil Spill Hits", title="Standardized BP Price vs Oil Spill Searches")
+
+BP_oil2_plot
+```
+
+We can see the distribution of the points on the revised plot. Neither plot  provides evidence of a linear relationship between BP price and "oil spill" searches. 
+
+```{r}
+# create scatter plot of BP and FTSE
+BP_FTSE_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(BP.L.month, FTSE.month)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="FTSE", title="Standardized BP Price vs FTSE Value")
+
+BP_FTSE_plot
+```
+
+The linear model line here is virtually flat and the LOESS line moves up and down so there doesn't appear to be a simple linear relationship between the FTSE value and BP.L. The points appear to be arranged in 3 or 4 groups each aligned bottom left to top right suggesting a more complex relationship.
+
+```{r}
+# create scatter plot of BP and petrol prices
+BP_petrol_plot <- stocks_fuel_weekly %>% 
+  ggplot(aes(BP.L.week, petrol_pump)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="BP.L", y="Petrol Prices", title="Standardized BP Price vs Petrol Prices")
+
+BP_petrol_plot
+```
+
+The linear model line suggests a weak negative linear relationship, the opposite of what would be expected. The LOESS moves up and down. Overall there is no strong evidence of a linear relationship between petrol prices and BP.L values.
+
+Of all the above plots only BP.L vs "global warming" provides evidence of a linear relationship. Will we get different results with RDSA.L?  
+
+```{r}
+# create scatter plot of RDSA and climate change
+RDSA_climate_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(RDSA.L.month, `climate change`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="RDSA.L", y="Climate Change Hits", title="Standardized RDSA Price vs Climate Change Searches")
+
+RDSA_climate_plot
+```
+
+The linear model line shows a weak negative linear relationship and the LOESS line stays fairly close to the linear model line. The evidence is not strong but we could reasonably assume a linear relationship. Does the correlation coefficient support that assumption?
+
+```{r}
+# calculate the correlation coefficient
+cor_RDSA_climate <- cor.test(
+  stocks_trends_distinct$RDSA.L.month, stocks_trends_distinct$`climate change`
+)
+
+cor_RDSA_climate$estimate
+cor_RDSA_climate$conf.int
+```
+
+The confidence interval for the correlation coefficient does not include 0 so we can be reasonably confident that there is a negative correlation.
+
+```{r}
+# create scatter plot of RDSA and global warming
+RDSA_global_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(RDSA.L.month, `global warming`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="RDSA.L", y="Global Warming Hits", title="Standardized RDSA Price vs Global Warming Searches")
+
+RDSA_global_plot
+```
+
+The linear model line here is almost flat. The distribution of points doesn't suggest a linear relationship. High values of "climate change" hits are associated with approximately mean values of RDSA.L.
+
+```{r}
+# create scatter plot of RDSA and oil spill (omitting high oil spill values)
+RDSA_oil2_plot <- stocks_trends_distinct %>% 
+  filter(`oil spill` < 10) %>% 
+  ggplot(aes(RDSA.L.month, `oil spill`)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="RDSA.L", y="Oil Spill Hits", title="Standardized RDSA Price vs Oil Spill Searches")
+
+RDSA_oil2_plot
+```
+
+There is no evidence of a linear relationship between "oil spill" searches and RDSA.L.
+
+```{r}
+# create scatter plot of RDSA and FTSE
+RDSA_FTSE_plot <- stocks_trends_distinct %>% 
+  ggplot(aes(RDSA.L.month, FTSE.month)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="RDSA.L", y="FTSE", title="Standardized RDSA Price vs FTSE Value")
+
+RDSA_FTSE_plot
+```
+
+The LOESS line suggests the relationship may not be linear but a trend for higher FTSE values to be associated with higher RDSA.L values is discernible. So assuming a linear relationship seems reasonable.
+
+```{r}
+# create scatter plot of RDSA and petrol prices
+RDSA_petrol_plot <- stocks_fuel_weekly %>% 
+  ggplot(aes(RDSA.L.week, petrol_pump)) +
+  geom_point() +
+  geom_smooth(method="loess", se=FALSE) +
+  geom_smooth(method="lm", color="red") +
+  labs(x="RDSA.L", y="Petrol Prices", title="Standardized RDSA Price vs Petrol Prices")
+
+RDSA_petrol_plot
+```
+
+Once again the LOESS line suggests a curvi-linear relationship but it seems reasonable to assume a linear relationship between RDSA.L values and petrol prices. 
+
+# Developing a linear model
+
+We found that we could reasonably assume a linear relationship between RDSA.L and "climate change" search hits, FTSE value and petrol prices so we will try to develop a linear regression model to predict RDSA.L values using those variables as predictors.
+
+First we need to join the variables in a single dataframe. The google search data is monthly so we will need to transform the fuel data to monthly values.
+
+```{r}
+# calculate monthly mean fuel price values and omit duplicate values
+stocks_fuel_monthly <- stocks_fuel_weekly %>%
+  group_by(ym = paste(year(Date), month(Date))) %>% 
+  transmute(petrol_pump_month = mean(petrol_pump)) %>% 
+  distinct()
+```
+
+```{r}
+# join the fuel and trends dataframes, omit redundant columns
+model_data <- stocks_fuel_monthly %>% 
+  inner_join(stocks_trends_distinct,
+             by = c('ym' = 'ym')) %>% 
+  select(ym, petrol_pump_month, RDSA.L.month, Date, FTSE.month, climate_change_std)
+```
+
+Now we can split the data into training and testing samples.
+
+```{r}
+# split data into training and test samples
+sample <- sample(c(TRUE, FALSE), nrow(model_data),
+                 replace=T, prob=c(0.6, 0.4))
+
+train_data <- model_data[sample, ]
+test_data <- model_data[!sample, ]
+```
+
+We can now create the linear regression model with the training sample.
+
+```{r}
+# create linear regression model
+model <- lm(RDSA.L.month ~ petrol_pump_month + FTSE.month + climate_change_std, data = train_data)
+```
+
+```{r}
+# view the model summary
+summary(model)
+```
+
+We can see from the summary that FTSE values and petrol prices are probably significant predictors of RDSA.L values but climate change search hits are probably not. The adjusted R-squared values shows that about a third of the variability in RDSA.L values is accounted for by the model.
+
+Lets try another model without climate_change_std.
+
+```{r}
+# create revised model
+model_2 <- lm(RDSA.L.month ~ petrol_pump_month + FTSE.month, data = train_data)
+```
+
+```{r}
+# view the revised model summary
+summary(model_2)
+```
+
+This appears to be a more efficient model. The distribution of the residuals is very similar and the adjusted R-squared value is approximately the same.
+
+Lets take a look at the residual distribution.
+
+```{r}
+# plot model_2 residuals 
+plot(model_2$residuals, pch=16, col="red")
+```
+
+The residuals appear fairly random until the last 10 or so points which are all very low indicating that the predicted values were considerably higher than the observed values. Those points correspond to September 2020 onwards. The large falls seen in RDSA.L values from March 2020 were not accurately predicted by the model. Although petrol prices and the FTSE fell during that period the model did not predict the magnitude of the fall in RDSA.L.
+
+Lets investigate the performance of the model on the test data sample.
+
+```{r}
+# add model_2 predicted values to the test sample
+test_predict <- test_data %>% 
+  add_predictions(model_2)
+```
+
+```{r}
+# calculate the residuals for the test sample
+test_predict$residual <- test_predict$RDSA.L.month - test_predict$pred
+```
+
+```{r}
+# view the summary statistics for the test sample residuals
+summary(test_predict$residual)
+```
+
+The quantiles of the test sample residuals are of the same order as the training sample.
+
+```{r}
+# calculate the standard deviation of the residuals
+sd(test_predict$residual)
+```
+
+Also the standard deviation of the test sample residuals is of the same order.
+
+```{r}
+# plot the test sample residuals
+plot(test_predict$residual, pch=16, col="red")
+```
+
+The same pattern is clear in the test sample residuals, the points are fairly evenly distributed until the March 2020 point. Thereafter the residuals are all very low.
+
+Is there a permanent shift in the relationship between the variables that makes the model useless after February 2020? So far there is no indication that the residuals are returning to the range seen prior to February 2020. Lets try creating a linear model with only the pre March 2020 data.
+
+```{r}
+# filter the data to only before March 2020
+model_data_pre <- model_data %>% 
+  filter(Date < "2020-03-01")
+```
+
+```{r}
+# create model with pre March 2020 data
+model_pre <- lm(RDSA.L.month ~ petrol_pump_month + FTSE.month, data = model_data_pre)
+```
+
+```{r}
+# view the model summary
+summary(model_pre)
+```
+
+The model based on only the pre March 2020 data has a R-squared statistic of 0.7095 so the model explained roughly two thirds of the variance in the data, whereas the previous model only explained roughly one third of the variance.
+
+```{r}
+# plot the residuals
+plot(model_pre$residuals, pch=16, col="red")
+```
+
+The residual plot for the pre-March 2020 model is more reassuring, there is no marked change in the residuals at any point, also the residual range is considerably smaller. 
+
+
+Although there is much less data post February 2020, lets try creating a model with that.
+
+```{r}
+# filter the data to only after February 2020
+model_data_post <- model_data %>% 
+  filter(Date > "2020-02-29")
+```
+
+```{r}
+# create model with pre March 2020 data
+model_post <- lm(RDSA.L.month ~ petrol_pump_month + FTSE.month, data = model_data_post)
+```
+
+```{r}
+# view the model summary
+summary(model_post)
+```
+
+```{r}
+mean(model_data_post$RDSA.L.month)
+```
+
+Perhaps there is insufficient data but, based on the available data, there is virtually no evidence of a linear relationship between petrol price and RDSA.L values. There is stronger evidence of a relationship between the FTSE value and RDSA.L but the p-value is 0.0656 so would be rejected at the 95% confidence level. The intercept is approximately the mean of RDSA.L.month so the model is essentially a horizontal line through the sample mean.
+
+# Conclusions
+
+We began this project with the aim of investigating how oil company values were affected by public concern for environmental issues. Using google search hits as a proxy for public concern we found no evidence of a link. The one instance of a possible linear relationship discovered was between RDSA.L and "climate change" hits but the associated linear model p-value was 0.379 indicating there was no evidence that "climate change" hits explained RDSA.L values.
+
+Rather than concluding that there is no relationship between oil company values and public environmental concerns it is reasonable to question whether google search hits is a reliable measure of public concern. The only clear relationship found was the spike in "oil spill" searches and the fall in BP.L value which coincided with the Deepwater Horizon disaster. This suggests that google search hits increase in response to events about which people want more information rather than being a measure of their opinion or concern.
+
+A future study could investigate other possible indicators of public concern regarding environmental issues or use opinion poll data.
+
+An unexpected discovery was the changing relationship between FTSE values, petrol prices and RDSA.L values. We saw that, as expected, there was a linear relationship between them but that relationship seems to have been broken around March 2020. At present there is no evidence that the previous relationship is being restored or that a different relationship has been established.
+
+
