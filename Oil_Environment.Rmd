@@ -881,12 +881,16 @@ Perhaps there is insufficient data but, based on the available data, there is vi
 
 # Conclusions
 
-We began this project with the aim of investigating how oil company values were affected by public concern for environmental issues. Using google search hits as a proxy for public concern we found no evidence of a link. The one instance of a possible linear relationship discovered was between RDSA.L and "climate change" hits but the associated linear model p-value was 0.379 indicating there was no evidence that "climate change" hits explained RDSA.L values.
+We began this project with the aim of investigating how oil company values were affected by public concern for environmental issues. Using Google search hits as a proxy for public concern we found no evidence of a linear relationship. The one instance of a possible linear relationship discovered was between RDSA.L and "climate change" hits but the associated linear model p-value was 0.379 indicating there was no evidence that "climate change" hits explained RDSA.L values.
 
-Rather than concluding that there is no relationship between oil company values and public environmental concerns it is reasonable to question whether google search hits is a reliable measure of public concern. The only clear relationship found was the spike in "oil spill" searches and the fall in BP.L value which coincided with the Deepwater Horizon disaster. This suggests that google search hits increase in response to events about which people want more information rather than being a measure of their opinion or concern.
+The scatterplots of BP.L and RDSA.L against the predictor variables did not indicate the presence of any simple non-linear relationships but some did appear to follow a curvi-linear pattern. Further investigation may be able to detect a useful non-linear relationship.
+
+Rather than concluding that there is no linear relationship between oil company values and public environmental concerns it is reasonable to question whether Google search hits is a reliable measure of public concern. The only clear relationship found was the spike in "oil spill" searches and the fall in BP.L value which coincided with the Deepwater Horizon disaster. This suggests that Google search hits increase in response to events about which people want more information rather than being a measure of their opinion or concern.
 
 A future study could investigate other possible indicators of public concern regarding environmental issues or use opinion poll data.
 
 An unexpected discovery was the changing relationship between FTSE values, petrol prices and RDSA.L values. We saw that, as expected, there was a linear relationship between them but that relationship seems to have been broken around March 2020. At present there is no evidence that the previous relationship is being restored or that a different relationship has been established.
+
+In a follow-up project I will investigate some aspects of the Google search data further; the 'climate change' and 'global warming' values appeared to have a seasonal pattern, would combining the 'climate change' and 'global warming' data be helpful, the possible curvi-linear relationship between the search data and BP.l and RDSA.L values. 
 
 

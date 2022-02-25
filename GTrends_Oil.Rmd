@@ -1,0 +1,127 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Introduction
+This project follows on from the Oil_Environment project and investigates some features of the Google Trends data further.
+
+We will look at:
+1. Is there a seasonal cycle in the Google Trends data?
+2. Does combining the 'global warming' and 'climate change' values provide a more useful measure of environmental concern?
+3. Is there evidence of a non-linear relationship between the Google Trends data and the oil company price data?
+
+For this project we will concentrate on the 'global warming' and 'climate change' variables. We saw that the number of searches for 'oil spill' was generally very low so separating any trend from the noise would be difficult.
+
+```{r}
+# load the required libraries
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+
+#Decomposition Models
+It was noted in the Oil_Environment project that the 'global warming' and 'climate change' variables tended to be lower in the middle of the year. Can they be described by decomposition models?
+
+Before starting the analysis we will omit the 'oil spill' variable which we will not consider in this project and then reshape the dataset. We will also change the column names.
+
+```{r}
+trends_data <- trends_wide %>%
+  select(-'oil spill', -oil_spill_std) %>%
+  rename(c(climate_change = 'climate change', global_warming = 'global warming'))
+```
+
+Now, lets plot each variable.
+
+```{r}
+# plot the global warming data to a line graph
+glob_warm_plot <- trends_data %>%
+  ggplot() +
+  geom_line(aes(date, global_warming)) +
+  labs(x="Date", y="Hits", title="Global Warming Google Search Trends Data")
+
+glob_warm_plot
+```
+
+
+
+As noted before there appears to be an annual cycle in the 'global warming' data. The seasonal pattern seems to be decreasing as the values decline suggesting a multiplicative decomposition model would be appropriate.
+
+```{r}
+# plot the climate change data to a line graph
+clim_chan_plot <- trends_data %>%
+  ggplot() +
+  geom_line(aes(x=date, y=climate_change)) +
+  labs(x="Date", y="Hits", title="Climate Change Google Search Trends Data")
+
+clim_chan_plot
+```
+
+
+Once again we can see that there appears to be an annual cycle in the 'climate change' data and the seasonal pattern seems to vary as the values vary suggesting again that a multiplicative decomposition model would be appropriate.
+
+Next we will attempt to fit a decomposition model to the data. The decompose function works best with a time series that is an integer number of complete periods so we will omit the last 9 values (January to September 2021) before fitting the model.
+
+First we will fit a decomposition model to the 'global warming' values.
+
+```{r}
+ts_global <- trends_data %>%
+  filter(date < "2021-01-01") %>%
+  pull(global_warming) %>%
+  ts(frequency=12)
+decompose_global <- decompose(ts_global, "multiplicative")
+plot(as.ts(decompose_global$seasonal))
+plot(as.ts(decompose_global$trend))
+plot(as.ts(decompose_global$random))
+plot(decompose_global)
+```
+
+
+
+```{r}
+# Save the model trend and seasonal values to the dataframe
+# We need to add 9 NA values to replace the 9 rows we omitted from the model
+trends_data$global_trend <- c(decompose_global$trend, rep(NA, 9))
+trends_data$global_seasonal <- c(decompose_global$seasonal, rep(NA, 9))
+```
+
+Next we will fit a decomposition model to the 'climate change' values.
+
+```{r}
+ts_climate <- trends_data %>%
+  filter(date < "2021-01-01") %>%
+  pull(climate_change) %>%
+  ts(frequency=12)
+decompose_climate <- decompose(ts_climate, "multiplicative")
+plot(as.ts(decompose_climate$seasonal))
+plot(as.ts(decompose_climate$trend))
+plot(as.ts(decompose_climate$random))
+plot(decompose_climate)
+```
+
+
+```{r}
+# Save the model trend and seasonal values to the dataframe
+# We need to add 9 NA values to replace the 9 rows we omitted from the model
+trends_data$climate_trend <- c(decompose_climate$trend, rep(NA, 9))
+trends_data$climate_seasonal <- c(decompose_climate$seasonal, rep(NA, 9))
+```
+
+Lets compare the seasonal components of the two search terms.
+
+
+```{r}
+# plot the two seasonal components
+seasonal_plot <- trends_data %>%
+  select(date, global_seasonal, climate_seasonal) %>%
+  filter(date < "2006-01-01") %>%
+  gather(key="variable", value="value", c(-date)) %>%
+  ggplot() +
+  geom_line(aes(x=date, y=value, color=variable)) +
+  labs(x="Date", y="Seasonal Component", title="Global Warming & Climate Change Seasonal Components")
+
+seasonal_plot
+```
+
