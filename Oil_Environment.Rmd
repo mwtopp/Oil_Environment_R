@@ -120,7 +120,7 @@ There are 14 rows of missing data in the FTSE data set, the same 12 as the share
 ftse <- ftse %>% na.omit()
 ```
 
-To compare the company stock prices to the market valuation graphically we will need to transform the data so the scale is comparable. First we will combine the data into a single dataframe.
+To compare the company stock prices to the market valuation graphically we will need to transform the data so the scale is comparable. First I will combine the data into a single dataframe.
 
 
 ```{r}
@@ -130,7 +130,7 @@ stocks_ftse <- stocks %>%
              by = c("Date" = "Date"))
 ```
 
-Before scaling the data we can review summary statistics and correlations.
+Before scaling the data I will review summary statistics and correlations.
 
 ```{r}
 # print the summary statistics
@@ -158,7 +158,7 @@ TLW is negatively correlated with the FTSE.
 To scale the data I will use the scale() function to Standardize the variables.
 
 ```{r}
-# transform columns to normalized data
+# transform columns to standardized data
 stocks_ftse_std <- stocks_ftse %>%
   mutate(BP.L.Close = scale(stocks_ftse$BP.L.Close),
          RDSA.L.Close = scale(stocks_ftse$RDSA.L.Close),
@@ -166,7 +166,7 @@ stocks_ftse_std <- stocks_ftse %>%
          FTSE.Close = scale(stocks_ftse$FTSE.Close))
 ```
 
-Plotting the normalized data.
+Plotting the standardized data.
 
 ```{r}
 # reshape the data to make plotting simpler
@@ -297,7 +297,7 @@ fuel_weekly[ , char_columns] <- as.data.frame(
 )
 ```
 
-To allow comparison of the stocks data and the fuel prices I will normalize the fuel price data. The duty and vat values are not considered relevant to this investigation so we can omit those columns from the normalized data.
+To allow comparison of the stocks data and the fuel prices I will standardize the fuel price data. The duty and vat values are not considered relevant to this investigation so we can omit those columns from the standardized data.
 
 ```{r}
 # omit the duty and vat columns
@@ -308,7 +308,7 @@ fuel_weekly_std <- fuel_weekly %>%
          diesel_pump = scale(fuel_weekly$diesel_pump))
 ```
 
-To analyse the stock prices and fuel prices we will join the stock weekly mean dataframe and the fuel weekly dataframe.
+To analyse the stock prices and fuel prices I will join the stock weekly mean dataframe and the fuel weekly dataframe.
 
 ```{r}
 # inner join stocks_ftse_week and fuel_weekly
@@ -377,7 +377,7 @@ cor(stocks_fuel_join %>% select(-petrol_duty, -petrol_vat,
 The correlation matrix shows a moderate positive correlation between fuel prices and the RDSA price but virtually no correlation between fuel prices and BP. As expected petrol and diesel prices have a very strong positive correlation.
 
 # Company Values and Environmental Concern
-Now we will explore google trends data. We want to investigate public concern about environmental issues that could be connected to oil company activity. So the search terms we'll use are 'climate change', 'global warming' and 'oil spill'. We want to compare the trends data to the stocks data so the period of interest is 02-01-2007 to 20-08-2021. We will use UK results as a proxy for the global public concern.
+Now I will explore google trends data. I want to investigate public concern about environmental issues that could be connected to oil company activity. So the search terms I'll use are 'climate change', 'global warming' and 'oil spill'. I want to compare the trends data to the stocks data so the period of interest is 02-01-2007 to 20-08-2021. We will use UK results as a proxy for the global public concern.
 
 ```{r}
 # load the gtrends library and other required library
@@ -432,7 +432,7 @@ trend_plot <- ggplot(data=trends_over_time) +
 trend_plot
 ```
 
-From the plot it appears "climate change" and "global warming" are correlated, hits tend to be lower in the middle of each year. Also initially "climate change" is searched more often whereas after 2013 "global warming" becomes the more common search term perhaps reflecting the growing understanding that the effect of human activity on the climate was more complex than just global warming. There is a large spike in searches for "global warming" around early 2007.
+From the plot it appears "climate change" and "global warming" are correlated, hits tend to be lower in the middle of each year. Also initially "global warming" is searched more often whereas after 2013 "climate change" becomes the more common search term perhaps reflecting the growing understanding that the effect of human activity on the climate was more complex than just global warming. There is a large spike in searches for "global warming" around early 2007.
 
 Generally the number of searches for "oil spill" is much lower than the other two terms. However there is a very large spike around mid-2010.
 
@@ -891,6 +891,6 @@ A future study could investigate other possible indicators of public concern reg
 
 An unexpected discovery was the changing relationship between FTSE values, petrol prices and RDSA.L values. We saw that, as expected, there was a linear relationship between them but that relationship seems to have been broken around March 2020. At present there is no evidence that the previous relationship is being restored or that a different relationship has been established.
 
-In a follow-up project I will investigate some aspects of the Google search data further; the 'climate change' and 'global warming' values appeared to have a seasonal pattern, would combining the 'climate change' and 'global warming' data be helpful, the possible curvi-linear relationship between the search data and BP.l and RDSA.L values. 
+In a follow-up project I will investigate some aspects of the Google search data further; the 'climate change' and 'global warming' values appeared to have a seasonal pattern, would combining the 'climate change' and 'global warming' data be helpful, the possible curvi-linear relationship between the search data and BP.l and RDSA.L values.
 
 

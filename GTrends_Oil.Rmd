@@ -6,12 +6,12 @@ output: html_notebook
 #Introduction
 This project follows on from the Oil_Environment project and investigates some features of the Google Trends data further.
 
-We will look at:
+I will look at:
 1. Is there a seasonal cycle in the Google Trends data?
 2. Does combining the 'global warming' and 'climate change' values provide a more useful measure of environmental concern?
 3. Is there evidence of a non-linear relationship between the Google Trends data and the oil company price data?
 
-For this project we will concentrate on the 'global warming' and 'climate change' variables. We saw that the number of searches for 'oil spill' was generally very low so separating any trend from the noise would be difficult.
+For this project I will concentrate on the 'global warming' and 'climate change' variables. We saw that the number of searches for 'oil spill' was generally very low so separating any trend from the noise would be difficult.
 
 ```{r}
 # load the required libraries
@@ -19,13 +19,14 @@ library(tidyr)
 library(dplyr)
 library(ggplot2)
 library(readr)
+library(energy)
 ```
 
 
 #Decomposition Models
 It was noted in the Oil_Environment project that the 'global warming' and 'climate change' variables tended to be lower in the middle of the year. Can they be described by decomposition models?
 
-Before starting the analysis we will omit the 'oil spill' variable which we will not consider in this project and then reshape the dataset. We will also change the column names.
+Before starting the analysis I will omit the 'oil spill' variable which I will not consider in this project and then reshape the data set. For simplicity I will also change the column names.
 
 ```{r}
 trends_data <- trends_wide %>%
@@ -62,9 +63,9 @@ clim_chan_plot
 
 Once again we can see that there appears to be an annual cycle in the 'climate change' data and the seasonal pattern seems to vary as the values vary suggesting again that a multiplicative decomposition model would be appropriate.
 
-Next we will attempt to fit a decomposition model to the data. The decompose function works best with a time series that is an integer number of complete periods so we will omit the last 9 values (January to September 2021) before fitting the model.
+Next I will attempt to fit a decomposition model to the data. The decompose function works best with a time series that is an integer number of complete periods so we will omit the last 9 values (January to September 2021) before fitting the model.
 
-First we will fit a decomposition model to the 'global warming' values.
+First I will fit a decomposition model to the 'global warming' values.
 
 ```{r}
 ts_global <- trends_data %>%
@@ -72,9 +73,6 @@ ts_global <- trends_data %>%
   pull(global_warming) %>%
   ts(frequency=12)
 decompose_global <- decompose(ts_global, "multiplicative")
-plot(as.ts(decompose_global$seasonal))
-plot(as.ts(decompose_global$trend))
-plot(as.ts(decompose_global$random))
 plot(decompose_global)
 ```
 
@@ -87,7 +85,7 @@ trends_data$global_trend <- c(decompose_global$trend, rep(NA, 9))
 trends_data$global_seasonal <- c(decompose_global$seasonal, rep(NA, 9))
 ```
 
-Next we will fit a decomposition model to the 'climate change' values.
+Next I will fit a decomposition model to the 'climate change' values.
 
 ```{r}
 ts_climate <- trends_data %>%
@@ -95,9 +93,6 @@ ts_climate <- trends_data %>%
   pull(climate_change) %>%
   ts(frequency=12)
 decompose_climate <- decompose(ts_climate, "multiplicative")
-plot(as.ts(decompose_climate$seasonal))
-plot(as.ts(decompose_climate$trend))
-plot(as.ts(decompose_climate$random))
 plot(decompose_climate)
 ```
 
@@ -109,7 +104,7 @@ trends_data$climate_trend <- c(decompose_climate$trend, rep(NA, 9))
 trends_data$climate_seasonal <- c(decompose_climate$seasonal, rep(NA, 9))
 ```
 
-Lets compare the seasonal components of the two search terms.
+Let's compare the seasonal components of the two search terms.
 
 
 ```{r}
@@ -125,3 +120,641 @@ seasonal_plot <- trends_data %>%
 seasonal_plot
 ```
 
+The plot shows that the seasonal components are generally similar. For both the lowest values occur at August and there are peaks at November and March. The global warming seasonal component has greater extreme values especially the low value at August. Also the global warming maximum occurs in March whereas the climate change maximum occurs in November.
+
+Despite these differences, the similarity is sufficient to reasonably combine these variables to create a new environmental concern variable.
+
+#Combined Environmental Concern Variable and Oil Company Value
+
+```{r}
+# sum global_trend and climate_trend
+trends_data$environ_trend <- trends_data$global_trend + trends_data$climate_trend
+```
+
+Lets plot the new environ_trend variable.
+
+```{r}
+# plot the environ_trend data to a line graph
+environ_plot <- trends_data %>%
+  na.omit() %>%
+  ggplot() +
+  geom_line(aes(x=date, y=environ_trend)) +
+  labs(x="Date", y="Trend", title="Combined Environmental Search Trend")
+
+environ_plot
+```
+
+Next I will add the raw RDSA.L values to the trends_data data frame.
+
+```{r}
+# select RDSA monthly values
+RDSA_month_raw <- stocks_month_raw %>%
+  select(RDSA.L.month, ym)
+
+# rename RDSA.L.month
+RDSA_month_raw <- RDSA_month_raw %>%
+  rename(RDSA = RDSA.L.month)
+
+# join RDSA to trends_data
+trends_RDSA_data <- trends_data %>%
+  inner_join(RDSA_month_raw, by=c('ym'='ym'))
+```
+
+There are no envion_trend values for the last fifteen rows (July 2020 to September 2021) due to the decomposition process so I will omit those rows. 
+```{r}
+# omit rows with missing values
+trends_RDSA_data <- trends_RDSA_data %>%
+  na.omit()
+```
+
+Next I will standardize the environ_trend values and the RDSA values so I can plot them together.
+
+```{r}
+# standardize the environ_trend and RDSA data
+trends_RDSA_data <- trends_RDSA_data %>%
+  mutate(environ_norm = scale(trends_RDSA_data$environ_trend),
+         RDSA_norm = scale(trends_RDSA_data$RDSA))
+```
+
+Now I can explore the environ_trend and RDSA.L data.
+
+```{r}
+# plot histogram of environ_trend
+environ_hist <- trends_RDSA_data %>%
+  ggplot(aes(environ_norm)) +
+  geom_histogram(binwidth = 0.2) +
+  geom_vline(aes(xintercept=median(environ_norm)), color='red') +
+  labs(x="Normalized Environmental Trend", y="Frequency")
+
+environ_hist
+```
+
+```{r}
+# plot histogram of RDSA.L.month
+RDSA_hist <- trends_RDSA_data %>%
+  ggplot(aes(RDSA_norm)) +
+  geom_histogram(binwidth = 0.2) +
+  geom_vline(aes(xintercept=median(RDSA_norm)), color='red') +
+  labs(x="Normalized RDSA Share Price", y="Frequency")
+
+RDSA_hist
+```
+
+The normalized environmental trend data are markedly right skew. The median line shows over 50% of the values are below the mean.
+
+The normalized share price is slightly left skew but more symmetrical than the environ_trend data. There are perhaps 2 modes. 
+
+Next I will plot both data sets against time.
+
+```{r}
+# reshape the data to make plotting simpler
+# plot the environ_norm and RDSA.L.month data to a line graph
+ts_plot <- trends_RDSA_data %>%
+  select(date, ym, environ_norm, RDSA_norm) %>%
+  pivot_longer(cols = c(environ_norm, RDSA_norm)) %>% 
+  ggplot() +
+  geom_line(aes(x=date, y=value, color=name)) +
+  labs(x="Date", y="Normalized Value", title="Environmental Search Trend and RDSA Share Price")
+
+ts_plot
+```
+
+There does not appear to be a simple relationship between the environmental search trend and RDSA share price based on this plot. Although there are some discernible patterns; during the period 2007 to 2010 the highest environ_norm values occur and the RDSA share price is generally lower than the mean, also the lowest environ_trend values approximately coincide with the highest RDSA share values around 2018.
+
+Next I will plot the data on a scatter plot to investigate whether the patterns observed above are visible.
+
+```{r}
+# plot a scatter plot
+sc_plot <- trends_RDSA_data %>%
+  ggplot(aes(environ_norm, RDSA_norm)) +
+  geom_point() +
+  geom_smooth(method="lm", formula=y~x, color="red") +
+  geom_smooth(method='loess', formula=y~x, color="blue") +
+  labs(x="Environmental Searches", y="RDSA Share Price", title="Normalized Environmental Searches vs RDSA Share Price")
+
+sc_plot
+```
+
+A negative slope is visible in the points although there is clearly a lot of scatter, especially for environ_norm values below 0.
+
+The LOESS line moves up and down but there is still considerable scatter around the line, especially for environ_norm values below 0 as before.
+
+There is no clear pattern suggesting a non-linear relationship or that a transformation of the envion_norm values would produce a (more) linear relationship. However, the residuals tend to be greater for low environ_norm values so lets try transforming the raw RDSA data to see if anything interesting is revealed.
+
+First, I will plot the natural log of the RDSA values.
+
+```{r}
+# plot a scatter plot
+sc_plot2 <- trends_RDSA_data %>%
+  ggplot(aes(environ_norm, log(RDSA))) +
+  geom_point() +
+  geom_smooth(method="lm", formula=y~x, color="red") +
+  geom_smooth(method='loess', formula=y~x, color="blue") +
+  labs(x="Environmental Searches", y="Log RDSA Share Price", title="Normalized Environmental Searches vs Log RDSA Share Price")
+
+sc_plot2
+```
+
+Generally the plot is very similar to the previous plot with the normalized data. There is a similar amount of scatter around the linear model line and the LOESS line is similar.
+
+Next I'll try taking the reciprocal of the RDSA values.
+
+```{r}
+# plot a scatter plot
+sc_plot4 <- trends_RDSA_data %>%
+  ggplot(aes(environ_norm, (1/RDSA))) +
+  geom_point() +
+  geom_smooth(method="lm", formula=y~x, color="red") +
+  geom_smooth(method='loess', formula=y~x, color="blue") +
+  labs(x="Environmental Searches", y="1/RDSA Share Price", title="Normalized Environmental Searches vs RDSA Share Price")
+
+sc_plot4
+```
+
+Aside from the slope being reversed this plot is  similar to the previous two.
+
+Finally I will try a -2 exponent transformation.
+
+```{r}
+# plot a scatter plot
+sc_plot5 <- trends_RDSA_data %>%
+  ggplot(aes(environ_norm, RDSA^-2)) +
+  geom_point() +
+  geom_smooth(method="lm", formula=y~x, color="red") +
+  geom_smooth(method='loess', formula=y~x, color="blue") +
+  labs(x="Environmental Searches", y="1/RDSA^2 Share Price", title="Normalized Environmental Searches vs RDSA Share Price")
+
+sc_plot5
+```
+
+This transformation has reduced the spread around the linear model slightly. The relationship between the linear model line and the LOESS line is very similar. 
+
+Next I will check correlation coefficients. In addition to the Pearson correlation I will check the distance correlation which measures non-linear dependency. First I will calculate the correlation coefficients for the standardized environmental trends data and the untransformed RDSA data.
+
+```{r}
+# check the Pearson correlation coefficient
+cor(trends_RDSA_data$environ_norm, trends_RDSA_data$RDSA)
+```
+
+
+```{r}
+# check distance correlation coefficient
+dis_cor <- dcor(trends_RDSA_data$environ_norm, trends_RDSA_data$RDSA)
+
+dis_cor
+```
+
+The correlation coefficients have similar magnitude both being below 0.5 suggesting a weak correlation.
+Next I'll check the correlation coefficients for the transformed data.
+
+```{r}
+# check Pearson correlation for -2 exp transformed data
+cor(trends_RDSA_data$environ_norm, (1/(trends_RDSA_data$RDSA^2)))
+```
+
+```{r}
+# check distance correlation for -2 exp transformed data
+dcor(trends_RDSA_data$environ_norm, (1/(trends_RDSA_data$RDSA^2)))
+```
+Both correlation coefficients are lower in magnitude for the transformed data, the Pearson correlation more so. We seem to have achieved a minimal reduction in scatter at the cost of reducing the correlation. Further investigation of the residuals will be required after fitting a model to establish whether a transformation is necessary to satisfy the assumptions of the model; normality and constant variance of residuals for example.
+
+# Fitting a Polynomial Regression Model
+
+In the previous project I fitted a linear regression model initially with fuel prices, FTSE values and climate change searches as explanatory variables and RDSA values as the response variable. I concluded that climate change searches was probably not a significant predictor. I will fit a similar model but this time use the decomposed and combined environmental trend data.
+
+The scatter plots of the environ_norm variable against the various functions of RDSA values all suggested to some degree that the relationship could be curvilinear. Also, the distance correlation coefficient was slightly greater in magnitude than the Pearson coefficient supporting the possibility of a non-linear relationship. So I will also fit polynomial regression models.
+
+To keep the model simple I will consider polynomial terms for the environ_norm variable only and limit the polynomial terms to degree 5. I will use k-fold cross-validation to compare models with different degrees of polynomial terms.
+
+I also identified a change in the relationship between the explanatory variables and RDSA values post February 2020, so I will omit those values again to compare like with like without added complication. Due to the decomposition process there are only 4 data points after February 2020, so little data is being lost.
+
+
+```{r}
+# omit post february 2020 data
+trend_model_data <- trends_RDSA_data %>%
+  filter(date < "2020-03-01")
+
+# select the fuel price and FTSE data
+fuel_ftse <- model_data_pre %>%
+  select(petrol_pump_month, FTSE.month, ym)
+
+# rename columns
+fuel_ftse <- fuel_ftse %>%
+  rename(ftse = FTSE.month, fuel = petrol_pump_month)
+
+# join fuel_ftse to trend_model_data
+trend_model_data <- trend_model_data %>%
+  inner_join(fuel_ftse,
+             by = c('ym'='ym'))
+
+# split into train and test set
+sample <- sample(c(TRUE, FALSE), nrow(trend_model_data),
+                 replace=T, prob=c(0.6, 0.4))
+
+trend_train_data <- trend_model_data[sample, ]
+trend_test_data <- trend_model_data[!sample, ]
+```
+
+For the first set of models I will use the untransformed RDSA data.
+
+```{r}
+# fit polynomial models to untransformed RDSA with k-fold cross-validation
+
+# remove additional columns
+cv_train_data <- trend_train_data %>%
+  select(RDSA, environ_norm, fuel, ftse)
+
+set.seed(123)
+
+# shuffle the training set so the folds are not in date order
+cv_train_data_shuf <- cv_train_data[sample(nrow(cv_train_data)),]
+
+# define number of folds for k-fold cross-validation
+K <- 10
+
+# define maximum degree of polynomials to fit
+degree <- 5
+
+# define k sets of row index values for the  assessment subsets
+folds <- cut(seq(1, nrow(cv_train_data_shuf)), breaks=K, labels=FALSE)
+
+# create matrix to store model MSEs
+mse <- matrix(data=NA, nrow=K, ncol=degree)
+
+# perform k-fold cross-validation
+for(i in 1:K){
+  
+  # define analysis and assessment 
+  assess_index <- which(folds==i, arr.ind = TRUE)
+  assess_data <- cv_train_data_shuf[assess_index, ]
+  predict_data <- data.frame(
+    RDSA=assess_data$RDSA,
+    fuel=assess_data$fuel,
+    ftse=assess_data$ftse,
+    environ_norm=assess_data$environ_norm)
+  analysis_data <- cv_train_data_shuf[-assess_index,]
+  
+  # use k-fold cv to evaluate models
+  for(j in 1:degree){
+    fit.analysis <- lm(RDSA ~ fuel +  ftse + poly(environ_norm, j),
+                 data = analysis_data)
+    fit.assess <- predict(fit.analysis, newdata=predict_data)
+    mse[i,j] = mean((fit.assess - assess_data$RDSA)^2)
+  }
+}
+
+# find mean MSE for each model
+colMeans(mse)
+```
+
+The model with polynomials of degree 5 has the lowest MSE. Let's look at that in more detail. The model will be fitted on the complete training data set.
+
+```{r}
+# create best model
+best_model1 <- lm(RDSA ~ fuel +  ftse + poly(environ_norm, 5),
+                 data = cv_train_data)
+
+summary(best_model1)
+```
+
+This model explains 78.8% of the variance in the RDSA variable. All except the degree 2 environ_norm polynomial terms have p-values below the 5% significance level.
+
+Let's look at the residuals. First in date order.
+
+```{r}
+# plot best_model1 residuals 
+plot(best_model1$residuals, pch=16, col="red")
+```
+
+In date (index) order the magnitude of the residuals does not exhibit a clear pattern. Perhaps from around index 40 there may be a saw tooth pattern suggesting the predictions are smoothing out fluctuations in the data. The two points around index 20 above 300 are exceptionally high.
+
+Next I'll look at the residuals versus the fitted RDSA values.
+
+```{r}
+# plot best_model1 residuals against the fitted values
+plot(best_model1$fitted.values, best_model1$residuals, pch=16, col="red")
+```
+
+A couple of patterns are discernable in this plot. The model is fitting some very low values, less than 1500, which are all too low / have positive residuals. These correspond to the high points observed in the previous plot. There are only a small number of low values so it is difficult to draw any strong conclusions. For the majority of fitted values, greater than 1600, the residuals are fairly well scattered.
+
+What does a normal probability plot of the residuals look like?
+
+```{r}
+# plot a normal probability plot of residuals
+qqnorm(best_model1$residuals,
+       xlab = "Normal Quantiles",
+       ylab = "Residuals",
+       main = "Normal Probability Plot of Resuduals")
+qqline(best_model1$residuals)
+```
+
+Once again the two points over 300 stand out. But overall there is no strong evidence against the residuals being normally distributed.
+
+Next I will repeat the k-fold cross validation with the transformed RDSA values we looked at earlier.
+
+```{r}
+# fit polynomial models to transformed RDSA with k-fold cross-validation
+
+# remove additional columns
+cv_train_data <- trend_train_data %>%
+  select(RDSA, environ_norm, fuel, ftse)
+
+set.seed(123)
+
+# shuffle the training set so the folds are not in date order
+cv_train_data_shuf <- cv_train_data[sample(nrow(cv_train_data)),]
+
+# define number of folds for k-fold cross-validation
+K <- 10
+
+# define maximum degree of polynomials to fit
+degree <- 5
+
+# define k sets of row index values for the  assessment subsets
+folds <- cut(seq(1, nrow(cv_train_data_shuf)), breaks=K, labels=FALSE)
+
+# create matrix to store model MSEs
+mse <- matrix(data=NA, nrow=K, ncol=degree)
+
+# perform k-fold cross-validation
+for(i in 1:K){
+  
+  # define analysis and assessment 
+  assess_index <- which(folds==i, arr.ind = TRUE)
+  assess_data <- cv_train_data_shuf[assess_index, ]
+  predict_data <- data.frame(
+    RDSA=assess_data$RDSA,
+    fuel=assess_data$fuel,
+    ftse=assess_data$ftse,
+    environ_norm=assess_data$environ_norm)
+  analysis_data <- cv_train_data_shuf[-assess_index,]
+  
+  # use k-fold cv to evaluate models
+  for(j in 1:degree){
+    fit.analysis <- lm((RDSA^-2) ~ fuel +  ftse + poly(environ_norm, j),
+                 data = analysis_data)
+    fit.assess <- predict(fit.analysis, newdata=predict_data)
+    mse[i,j] = mean((fit.assess^-0.5 - assess_data$RDSA)^2)
+  }
+}
+
+# find mean MSE for each model
+colMeans(mse)
+```
+
+Fitting a model to the transformed RDSA data does not produce such a clear best model as we saw with the untransformed data. A polynomial of degree 1 and a polynomial of degree 5 produce almost the same MSE. Both are higher than the best untransformed model.
+
+Let's take a look at both models.
+
+
+```{r}
+# fit degree 1 polynomial model with -2 exponent transformed response
+prt_model1 <- lm((RDSA^-2) ~ fuel +  ftse + poly(environ_norm, 1), data = trend_train_data)
+
+summary(prt_model1)
+```
+
+```{r}
+# fit degree 5 polynomial model with -2 exponent transformed response
+prt_model2 <- lm((RDSA^-2) ~ fuel +  ftse + poly(environ_norm, 5), data = trend_train_data)
+
+summary(prt_model2)
+```
+
+The performance of the two models is similar, 73.5% versus 75.2% of the variance explained. Although the first model is simpler I will proceed with the second, more complicated model because the performance is slightly better.
+
+Next we'll look at the residuals for this model. I will scale them first to make interpretation easier. First in date order.
+
+```{r}
+# plot prt_model2 residuals 
+plot(scale(prt_model2$residuals), pch=16, col="red")
+```
+
+The majority of the points are within the range (-2, 2), the variance appears constant, from around index 40 a saw tooth pattern is discernible but overall the points appear random. There are a few points with high absolute values, two around index 20 as observed with the previous model and another around index 70.
+
+```{r}
+# plot prt_model2 residuals against the fitted values
+plot(prt_model2$fitted.values, scale(prt_model2$residuals), pch=16, col="red")
+```
+
+There appears to be a curved pattern to the bulk of the points, low fitted values have positive residuals, then the residuals are predominately negative, before switching to positive again. For fitted values greater than 3.0e-07 the variance of the residuals increases. The three highest fitted values all have large negative residuals. Overall there is cause to question the assumption that the residuals are normally distributed with constant variance.
+
+Once again we'll plot a normal probability plot.
+
+```{r}
+# plot a normal probability plot of residuals
+qqnorm(prt_model2$residuals,
+       xlab = "Normal Quantiles",
+       ylab = "Residuals",
+       main = "Normal Probability Plot of Resuduals")
+qqline(prt_model2$residuals)
+```
+
+The highest and lowest residuals are considerably greater in absolute value than would be expected for a normal distribution. Otherwise the points are closer to the expected line than was the case for the untransformed data.
+
+Using multiple functions of a variable as explanatory variables raises the risk of multicolinearity. Together using a standardized variable and the poly() function creating orthogonal polynomials should avoid this. Lets look at a correlation matrix.
+
+
+```{r}
+# check correlation of poly terms
+cor(cbind(poly(trend_train_data$environ_norm, 5)))
+```
+
+We can see that the correlations between the polynomials are very close to zero. So multicolinearity should not be a serious issue for the models.
+
+
+# Testing the two preferred models
+
+Next I will test the performance of the two models using the reserved test data.
+
+```{r}
+# test best_model1
+test_data <- data.frame(
+    RDSA=trend_test_data$RDSA,
+    fuel=trend_test_data$fuel,
+    ftse=trend_test_data$ftse,
+    environ_norm=trend_test_data$environ_norm)
+
+bm1.test <- predict(best_model1, newdata=test_data)
+bm1.mse = mean((bm1.test - test_data$RDSA)^2)
+
+bm1.mse
+```
+
+```{r}
+# test prt_model2
+prt2.test <- predict(prt_model2, newdata=test_data)
+prt2.mse = mean((prt2.test^-0.5 - test_data$RDSA)^2)
+
+prt2.mse
+```
+
+The MSE for the untransformed response model (best_model1) is 19115, which compares to an average of 18906 for the cross validation models.
+
+The model with a transformed response (prt_model2) achieved a MSE of 22059 compared to an average of 19508 for the cross validation models.
+
+Hence best_model1 typically performs better and is also more consistent than the prt_model2. I will proceed with best_model1 as the preferred model.
+
+Next, I will look at the residuals for the test data.
+
+```{r}
+# add predictions to test_data
+test_data$pred <- bm1.test
+
+# calculate residuals
+test_data$residuals <- test_data$RDSA - test_data$pred
+
+# display residual summary statistics
+summary(test_data$residuals)
+```
+
+Let's look at the residual plots, first in date (index) order. I will scale the residuals to make interpretation simpler.
+
+```{r}
+# plot residuals in date order
+plot(scale(test_data$residuals), pch=16, col="red")
+```
+
+With the exception of one very high value and one very low value, there is not much to concern us here. The high values are around three standard deviations from the mean so they are not way beyond what might reasonably be expected from a sample of 60 values.
+
+```{r}
+# plot residuals against the predicted values
+plot(test_data$pred, scale(test_data$residuals), pch=16, col="red")
+```
+
+No pattern is visible in this plot. Low predicted values, below 1600, all have positive residuals suggesting the model may systematically under estimate low values. However there are only five values below 1600 so there is insufficient evidence to draw any strong conclusions.
+
+Finally let's look at the normal probability plot.
+
+```{r}
+# plot a normal probability plot of residuals
+qqnorm(test_data$residuals,
+       xlab = "Normal Quantiles",
+       ylab = "Residuals",
+       main = "Normal Probability Plot of Residuals")
+qqline(test_data$residuals)
+```
+
+Once again we see the very high value and the very low value do not conform to the expected pattern for normally distributed values. Otherwise the points are reasonable close to the expected line.
+
+Before moving on let's look at the complete data set over time compared to the model predictions.
+
+
+```{r}
+# select the explanatory variables for the whole data set
+trend_model_var <- data.frame(
+    RDSA=trend_model_data$RDSA,
+    fuel=trend_model_data$fuel,
+    ftse=trend_model_data$ftse,
+    environ_norm=trend_model_data$environ_norm)
+
+# add predicted values to the trend_model_data_pred
+trend_model_pred <- data.frame(pred = predict(best_model1, newdata=trend_model_var))
+
+# add the observed RDSA values and the date values to trend_model_data_pred
+trend_model_pred$RDSA = trend_model_data$RDSA
+trend_model_pred$date = trend_model_data$date
+```
+
+
+```{r}
+# plot the observed against the predicted values
+
+# reshape the data to make plotting simpler
+# plot the environ_norm and RDSA.L.month data to a line graph
+obs_pred_plot <- trend_model_pred %>%
+  pivot_longer(cols = c(RDSA, pred)) %>% 
+  ggplot() +
+  geom_line(aes(x=date, y=value, color=name)) +
+  labs(x="Date", y="RDSA Value", title="Observed and Predicted RDSA Share Price")
+
+obs_pred_plot
+```
+
+Generally the predicted values follow the observed values reasonably closely. Of course we must remember that the majority of these observed values are the data that the model was trained on so we would be surprised if there was no correlation. The two very large residuals can be seen at approximately 2009 where the model predicts a low value but the actual value increased and in early 2020 where the model predicts a small drop but the actual value dropped considerably.
+
+# Comparison with a baseline model
+
+We have developed a model that is reasonably effective at predicting RDSA values, explaining 78.8% of the variance. How does that compare to a simpler model with only the fuel and ftse explanatory variables.
+
+I will fit the baseline model using the same cross-validation method to measure MSE.
+
+```{r}
+# fit simple linear models with k-fold cross-validation
+
+# remove additional columns
+cv_train_data2 <- trend_train_data %>%
+  select(RDSA, fuel, ftse)
+
+set.seed(123)
+
+# shuffle the training set so the folds are not in date order
+cv_train_data2_shuf <- cv_train_data2[sample(nrow(cv_train_data2)),]
+
+# define number of folds for k-fold cross-validation
+K <- 10
+
+# define k sets of row index values for the  assessment subsets
+folds <- cut(seq(1, nrow(cv_train_data2_shuf)), breaks=K, labels=FALSE)
+
+# create matrix to store model MSEs
+mse <- matrix(data=NA, nrow=K, ncol=1)
+
+# perform k-fold cross-validation
+for(i in 1:K){
+  
+  # define analysis and assessment data
+  assess_index <- which(folds==i, arr.ind = TRUE)
+  assess_data <- cv_train_data2_shuf[assess_index, ]
+  predict_data <- data.frame(
+    RDSA=assess_data$RDSA,
+    fuel=assess_data$fuel,
+    ftse=assess_data$ftse)
+  analysis_data <- cv_train_data2_shuf[-assess_index,]
+  
+  # use k-fold cv to evaluate models
+  fit.analysis <- lm(RDSA ~ fuel +  ftse, data = analysis_data)
+  fit.assess <- predict(fit.analysis, newdata=predict_data)
+  mse[i,1] = mean((fit.assess - assess_data$RDSA)^2)
+
+}
+
+# find mean MSE
+colMeans(mse)
+```
+
+Now, using all the training data.
+
+```{r}
+# create simple model
+simple_model1 <- lm(RDSA ~ fuel +  ftse,
+                 data = cv_train_data2)
+
+summary(simple_model1)
+```
+
+The average MSE for the simple model is 22029 compared to 18906 for the preferred model. The simple model explains 72.2% of the variance compared to 78.8% for the preferred model. 
+
+
+# Conclusions
+
+I began this project, and the previous project, wishing to investigate whether there was a relationship, linear or non-linear, between environmental Google searches, as a proxy for public environmental concern, and the value of oil company shares, specifically Royal Dutch Shell (RDSA) in this project.
+
+The previous project found no evidence of a linear relationship but did reveal some possible directions for further investigation. This project has developed some of those.
+
+After applying decomposition models to the 'global warming' and 'climate change' search data it was apparent that they shared a similar seasonal pattern. With the aim of extracting a stronger signal from the data I chose to create a new variable defined as the sum of the trend components of the two search values.
+
+I investigated a variety of polynomial regression models and determined that the best performing model was a linear model including orthogonal polynomials of the combined environmental trend data up to degree 5.
+
+Working on the principal that a simpler model is better than a more complex model given similar performance we need to consider whether the added complexity of the preferred model is justified by the improved performance. In this case my conclusion is that the performance gain is sufficient to compensate for the added complexity. Compared to the simple model without any environmental search predictor variable the R-squared metric is almost 10% greater. 
+
+A drawback to a more complex model is the increased difficulty of interpreting it. In this case the effect of the environmental search term is obfuscated by the complexity of the polynomial terms. 
+
+Comparing the preferred model to the simple model without any environmental search predictor I conclude that there is an association between RDSA share value and Google environmental searches. This project confirms that the Google environmental search data does partly 'explain' the RDSA data although greater contributions to the models performance come from the fuel price and FTSE index data.
+
+Possible developments / investigations for future projects include:
+1. Try using the separate trend terms as explanatory variables or some combination other than the sum.
+2. Try including interaction terms in the polynomial model, for example interactions between the environmental trend variable and the fuel or FTSE variable.
+3. Consider other linear methods such as Ridge Regression which deals with multicolinearity in a different way.
+4. Explore other measures of public / governmental environmental concern.
+5. Consider a model that could predict RDSA values, say one week ahead.
